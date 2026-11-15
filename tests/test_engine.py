@@ -47,6 +47,7 @@ from make_duplex.engine import (
     build_nup_page,
     compute_sheet_pairs,
     filter_pages,
+    insert_blank_pages,
     is_landscape,
     parse_page_range,
     render_sheet_preview,
@@ -170,6 +171,61 @@ def test_filter_pages_invalid_token() -> None:
     """Invalid token in skip spec raises ValueError."""
     with pytest.raises(ValueError):
         filter_pages("", "xyz", PAGE_COUNT)
+
+
+def test_insert_blank_pages_after() -> None:
+    """Blank page inserted after specified 1-based page numbers."""
+    pages = [0, 1, 2, 3]  # pages 1, 2, 3, 4
+    # Insert blank after page 2
+    res = insert_blank_pages(pages, "2", PAGE_COUNT, position="after")
+    assert res == [0, 1, -1, 2, 3]
+
+
+def test_insert_blank_pages_before() -> None:
+    """Blank page inserted before specified 1-based page numbers."""
+    pages = [0, 1, 2, 3]
+    # Insert blank before page 2
+    res = insert_blank_pages(pages, "2", PAGE_COUNT, position="before")
+    assert res == [0, -1, 1, 2, 3]
+
+
+def test_insert_blank_pages_range_and_multiple() -> None:
+    """Blank pages inserted for comma-separated list and ranges."""
+    pages = [0, 1, 2, 3, 4]
+    # Blank after pages 2 and 4
+    res = insert_blank_pages(pages, "2, 4", PAGE_COUNT, position="after")
+    assert res == [0, 1, -1, 2, 3, -1, 4]
+
+    # Multiple blanks at same page
+    res_multi = insert_blank_pages(pages, "2, 2", PAGE_COUNT, position="after")
+    assert res_multi == [0, 1, -1, -1, 2, 3, 4]
+
+
+def test_insert_blank_pages_skipped_page() -> None:
+    """Blank page inserted at the position of a skipped page."""
+    pages = [0, 1, 3, 4]  # page 3 (index 2) was skipped
+    res_after = insert_blank_pages(pages, "3", PAGE_COUNT, position="after")
+    assert res_after == [0, 1, -1, 3, 4]
+
+    res_before = insert_blank_pages(pages, "3", PAGE_COUNT, position="before")
+    assert res_before == [0, 1, -1, 3, 4]
+
+
+def test_insert_blank_pages_validation() -> None:
+    """Invalid token or out-of-range page raises ValueError."""
+    pages = [0, 1, 2]
+    with pytest.raises(ValueError, match="Unrecognised"):
+        insert_blank_pages(pages, "bad", PAGE_COUNT)
+
+    with pytest.raises(ValueError, match="out of range"):
+        insert_blank_pages(pages, "99", PAGE_COUNT)
+
+
+def test_filter_pages_with_blanks() -> None:
+    """filter_pages correctly integrates include, skip, and blanks."""
+    # From 5 pages, skip 3, blank after 2
+    res = filter_pages("1-5", "3", 5, blank_spec="2", blank_pos="after")
+    assert res == [0, 1, -1, 3, 4]
 
 
 # ---------------------------------------------------------------------------

@@ -258,3 +258,41 @@ def test_print_single_side_front_and_back(
     assert success_back is True
     assert back_pdf.exists()
     doc.close()
+
+
+def test_main_window_blank_pages(
+    qapp: QApplication, sample_pdf_path: pathlib.Path
+) -> None:
+    """MainWindow correctly inserts blank pages and reflects in preview & status."""
+    window = MainWindow()
+    window.load_pdf(str(sample_pdf_path))
+
+    # Insert blank page after page 2
+    window._blank_edit.setText("2")
+    window._blank_pos_combo.setCurrentIndex(0)  # "After page"
+    window._apply_blank_btn.click()
+
+    # 8 slides + 1 blank = 9 items -> at 2-up (4 per sheet) = 3 physical sheets
+    assert len(window._sheet_pairs) == 3
+    assert "Blank: 1" in window._range_status_label.text()
+
+    # Sheet 1 front: [0, 1] (slides 1, 2); back: [-1, 2] (Blank, slide 3)
+    s0 = window._sheet_pairs[0]
+    assert s0.front_page_indices == [0, 1]
+    assert s0.back_page_indices == [-1, 2]
+
+    # Verify slide preview info text
+    assert "Front Slides: [1, 2]" in window._front_pages_info.text()
+    assert "Back Slides: [Blank, 3]" in window._back_pages_info.text()
+
+    # Change to "Before page"
+    window._blank_pos_combo.setCurrentIndex(1)  # "Before page"
+    window._apply_blank_btn.click()
+
+    # Sheet 1 front: [0, -1] (slide 1, Blank); back: [1, 2] (slides 2, 3)
+    s0_before = window._sheet_pairs[0]
+    assert s0_before.front_page_indices == [0, -1]
+    assert s0_before.back_page_indices == [1, 2]
+    assert "Front Slides: [1, Blank]" in window._front_pages_info.text()
+
+    window.close()

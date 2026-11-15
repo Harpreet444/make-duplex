@@ -64,6 +64,7 @@ from make_duplex.engine import (
     build_document,
     compute_sheet_pairs,
     filter_pages,
+    insert_blank_pages,
     is_landscape,
     parse_page_range,
     render_sheet_preview,
@@ -245,13 +246,37 @@ class MainWindow(QMainWindow):
         skip_input_row.addWidget(self._apply_range_btn)
         skip_layout.addLayout(skip_input_row)
 
-        self._range_status_label = QLabel("Sheets: — | Selected pages: —")
-        self._range_status_label.setStyleSheet("font-weight: 500; color: #1e293b; font-size: 11px;")
-        skip_layout.addWidget(self._range_status_label)
         panel_layout.addWidget(skip_group)
 
-        # 4. Layout & Duplex Options Group
-        opts_group = QGroupBox("4. Layout & Duplex Options")
+        # 4. Blank Pages Group
+        blank_group = QGroupBox("4. Blank Pages (Insert)")
+        blank_layout = QVBoxLayout(blank_group)
+        blank_layout.setSpacing(6)
+
+        blank_input_row = QHBoxLayout()
+        self._blank_edit = QLineEdit()
+        self._blank_edit.setPlaceholderText("e.g. 2, 5, 8 (comma-separated)")
+        self._blank_edit.returnPressed.connect(self._on_apply_range)
+        blank_input_row.addWidget(self._blank_edit, stretch=2)
+
+        self._blank_pos_combo = QComboBox()
+        self._blank_pos_combo.addItem("After page", "after")
+        self._blank_pos_combo.addItem("Before page", "before")
+        self._blank_pos_combo.currentIndexChanged.connect(self._on_apply_range)
+        blank_input_row.addWidget(self._blank_pos_combo, stretch=1)
+
+        self._apply_blank_btn = QPushButton("Apply")
+        self._apply_blank_btn.clicked.connect(self._on_apply_range)
+        blank_input_row.addWidget(self._apply_blank_btn)
+        blank_layout.addLayout(blank_input_row)
+
+        self._range_status_label = QLabel("Sheets: — | Selected pages: —")
+        self._range_status_label.setStyleSheet("font-weight: 500; color: #1e293b; font-size: 11px;")
+        blank_layout.addWidget(self._range_status_label)
+        panel_layout.addWidget(blank_group)
+
+        # 5. Layout & Duplex Options Group
+        opts_group = QGroupBox("5. Layout & Duplex Options")
         opts_layout = QVBoxLayout(opts_group)
         opts_layout.setSpacing(10)
 
@@ -329,40 +354,63 @@ class MainWindow(QMainWindow):
         opts_layout.addWidget(self._flip_short_check)
 
         panel_layout.addWidget(opts_group)
+        panel_layout.addStretch()
 
-        # 5. Sheet Navigator Group
-        nav_group = QGroupBox("5. Sheet Preview Navigator")
+        splitter.addWidget(left_scroll)
+
+        # Right preview panel
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(6, 6, 6, 6)
+        right_layout.setSpacing(6)
+
+        # Top Header Bar: Sheet Navigator + Output Actions
+        header_row = QHBoxLayout()
+        header_row.setSpacing(10)
+
+        # 1. Sheet Preview Navigator Group
+        nav_group = QGroupBox("Sheet Preview Navigator")
         nav_layout = QVBoxLayout(nav_group)
-        nav_layout.setSpacing(8)
+        nav_layout.setContentsMargins(10, 8, 10, 8)
+        nav_layout.setSpacing(6)
 
-        nav_row = QHBoxLayout()
+        nav_ctrl_row = QHBoxLayout()
         self._prev_btn = QPushButton("◀ Previous")
+        self._prev_btn.setFixedHeight(30)
         self._prev_btn.clicked.connect(self._on_prev_sheet)
-        nav_row.addWidget(self._prev_btn)
+        nav_ctrl_row.addWidget(self._prev_btn)
 
         self._sheet_indicator = QLabel("Sheet 0 of 0")
         self._sheet_indicator.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._sheet_indicator.setStyleSheet("font-weight: bold; font-size: 12px;")
-        nav_row.addWidget(self._sheet_indicator)
+        self._sheet_indicator.setStyleSheet("font-weight: bold; font-size: 13px;")
+        nav_ctrl_row.addWidget(self._sheet_indicator)
 
         self._next_btn = QPushButton("Next ▶")
+        self._next_btn.setFixedHeight(30)
         self._next_btn.clicked.connect(self._on_next_sheet)
-        nav_row.addWidget(self._next_btn)
+        nav_ctrl_row.addWidget(self._next_btn)
+        nav_layout.addLayout(nav_ctrl_row)
 
-        nav_layout.addLayout(nav_row)
-        panel_layout.addWidget(nav_group)
+        self._sheet_detail_label = QLabel("Physical Sheet Preview")
+        self._sheet_detail_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._sheet_detail_label.setStyleSheet(
+            "font-size: 11px; font-weight: 600; color: #38bdf8; padding: 2px;"
+        )
+        nav_layout.addWidget(self._sheet_detail_label)
 
-        # 6. Output Actions Group (2x2 Grid)
-        action_group = QGroupBox("6. Output Actions")
+        header_row.addWidget(nav_group, stretch=1)
+
+        # 2. Output Actions Group (2x2 Grid)
+        action_group = QGroupBox("Output Actions")
         action_grid = QGridLayout(action_group)
-        action_grid.setContentsMargins(8, 10, 8, 8)
-        action_grid.setSpacing(8)
+        action_grid.setContentsMargins(10, 8, 10, 8)
+        action_grid.setSpacing(6)
 
         # Row 0: Separate Front and Back passes
         self._print_front_btn = QPushButton("🖨  Print Front (Pass 1)")
         self._print_front_btn.setStyleSheet(
             "background-color: #0284c7; color: white; font-weight: bold; "
-            "font-size: 11px; padding: 10px 4px; border-radius: 6px;"
+            "font-size: 11px; padding: 6px 10px; border-radius: 6px;"
         )
         self._print_front_btn.setToolTip("Print all Front-side sheets (Pass 1)")
         self._print_front_btn.clicked.connect(self._on_print_front)
@@ -371,7 +419,7 @@ class MainWindow(QMainWindow):
         self._print_back_btn = QPushButton("🖨  Print Back (Pass 2)")
         self._print_back_btn.setStyleSheet(
             "background-color: #7c3aed; color: white; font-weight: bold; "
-            "font-size: 11px; padding: 10px 4px; border-radius: 6px;"
+            "font-size: 11px; padding: 6px 10px; border-radius: 6px;"
         )
         self._print_back_btn.setToolTip("Print all Back-side sheets (Pass 2, after flip)")
         self._print_back_btn.clicked.connect(self._on_print_back)
@@ -381,7 +429,7 @@ class MainWindow(QMainWindow):
         self._print_guided_btn = QPushButton("🔄  Guided Print")
         self._print_guided_btn.setStyleSheet(
             "background-color: #334155; color: white; font-weight: 500; "
-            "font-size: 11px; padding: 10px 4px; border-radius: 6px;"
+            "font-size: 11px; padding: 6px 10px; border-radius: 6px;"
         )
         self._print_guided_btn.setToolTip("Guided all-in-one duplex flow (Fronts ➔ Flip Dialog ➔ Backs)")
         self._print_guided_btn.clicked.connect(self._on_print_guided)
@@ -390,40 +438,26 @@ class MainWindow(QMainWindow):
         self._export_btn = QPushButton("💾  Export PDFs")
         self._export_btn.setStyleSheet(
             "background-color: #0f766e; color: white; font-weight: bold; "
-            "font-size: 11px; padding: 10px 4px; border-radius: 6px;"
+            "font-size: 11px; padding: 6px 10px; border-radius: 6px;"
         )
         self._export_btn.setToolTip("Export 1_PRINT_FRONT.pdf and 2_PRINT_BACK.pdf to a folder")
         self._export_btn.clicked.connect(self._on_export_pdfs)
         action_grid.addWidget(self._export_btn, 1, 1)
 
-        panel_layout.addWidget(action_group)
-        panel_layout.addStretch()
+        header_row.addWidget(action_group, stretch=1)
+        right_layout.addLayout(header_row)
 
-        splitter.addWidget(left_scroll)
-
-        # Right preview panel
-        right_container = QWidget()
-        right_layout = QVBoxLayout(right_container)
-        right_layout.setContentsMargins(8, 0, 0, 0)
-        right_layout.setSpacing(8)
-
-        # Top summary title of sheet
-        self._sheet_detail_label = QLabel("Physical Sheet Preview")
-        self._sheet_detail_label.setStyleSheet(
-            "font-size: 14px; font-weight: bold; color: #1e293b; padding: 4px;"
-        )
-        right_layout.addWidget(self._sheet_detail_label)
-
-        # Side by side previews
+        # Side by side previews (reduced spacing & margins)
         previews_row = QHBoxLayout()
-        previews_row.setSpacing(16)
+        previews_row.setSpacing(10)
 
         # Front preview box
         front_box = QFrame()
         front_box.setFrameShape(QFrame.Shape.StyledPanel)
         front_box.setStyleSheet("background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;")
         front_box_layout = QVBoxLayout(front_box)
-        front_box_layout.setContentsMargins(10, 10, 10, 10)
+        front_box_layout.setContentsMargins(6, 6, 6, 6)
+        front_box_layout.setSpacing(4)
 
         front_header = QLabel("FRONT SIDE (Pass 1)")
         front_header.setStyleSheet("font-weight: bold; color: #0284c7; font-size: 12px;")
@@ -448,7 +482,8 @@ class MainWindow(QMainWindow):
         back_box.setFrameShape(QFrame.Shape.StyledPanel)
         back_box.setStyleSheet("background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;")
         back_box_layout = QVBoxLayout(back_box)
-        back_box_layout.setContentsMargins(10, 10, 10, 10)
+        back_box_layout.setContentsMargins(6, 6, 6, 6)
+        back_box_layout.setSpacing(4)
 
         back_header = QLabel("BACK SIDE (Pass 2, after flip)")
         back_header.setStyleSheet("font-weight: bold; color: #7c3aed; font-size: 12px;")
@@ -571,6 +606,8 @@ class MainWindow(QMainWindow):
         )
         self._range_edit.clear()
         self._skip_edit.clear()
+        self._blank_edit.clear()
+        self._blank_pos_combo.setCurrentIndex(0)
 
         # Default: select all pages
         self._selected_page_indices = list(range(self._total_src_pages))
@@ -609,8 +646,16 @@ class MainWindow(QMainWindow):
 
         range_spec = self._range_edit.text()
         skip_spec = self._skip_edit.text()
+        blank_spec = self._blank_edit.text()
+        blank_pos = self._blank_pos_combo.currentData() or "after"
         try:
-            indices = filter_pages(range_spec, skip_spec, self._total_src_pages)
+            indices = filter_pages(
+                range_spec,
+                skip_spec,
+                self._total_src_pages,
+                blank_spec=blank_spec,
+                blank_pos=blank_pos,
+            )
         except ValueError as err:
             QMessageBox.warning(self, "Invalid Page Specification", str(err))
             return
@@ -653,6 +698,9 @@ class MainWindow(QMainWindow):
         self._apply_range_btn.setEnabled(has_pdf)
         self._range_edit.setEnabled(has_pdf)
         self._skip_edit.setEnabled(has_pdf)
+        self._blank_edit.setEnabled(has_pdf)
+        self._blank_pos_combo.setEnabled(has_pdf)
+        self._apply_blank_btn.setEnabled(has_pdf)
         self._nup_combo.setEnabled(has_pdf)
         self._paper_combo.setEnabled(has_pdf)
         self._margin_spin.setEnabled(has_pdf)
@@ -673,17 +721,28 @@ class MainWindow(QMainWindow):
         if has_sheets:
             total_sheets = len(self._sheet_pairs)
             sel_count = len(self._selected_page_indices)
-            skipped_count = self._total_src_pages - sel_count
+            blank_count = sum(1 for p in self._selected_page_indices if p < 0)
+            real_slide_count = sel_count - blank_count
+            skipped_count = self._total_src_pages - real_slide_count
+
             self._sheet_indicator.setText(
                 f"Sheet {self._current_sheet_idx + 1} of {total_sheets}"
             )
+
+            parts = [f"Physical Sheets: {total_sheets}", f"Slides: {real_slide_count}"]
+            subparts = []
+            if blank_count > 0:
+                subparts.append(f"Blank: {blank_count}")
             if skipped_count > 0:
+                subparts.append(f"Skipped: {skipped_count}")
+
+            if subparts:
                 self._range_status_label.setText(
-                    f"Sheets: {total_sheets} | Slides: {sel_count} (Skipped: {skipped_count})"
+                    f"{parts[0]} | {parts[1]} ({', '.join(subparts)})"
                 )
             else:
                 self._range_status_label.setText(
-                    f"Physical Sheets: {total_sheets} | Selected Slides: {sel_count}"
+                    f"{parts[0]} | Selected Slides: {sel_count}"
                 )
         else:
             self._sheet_indicator.setText("Sheet 0 of 0")
@@ -735,9 +794,12 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Preview render error: {exc}", 5000)
             return
 
-        # Update slide labels (convert 0-based to human 1-based)
-        front_human = [str(p + 1) for p in pair.front_page_indices]
-        back_human = [str(p + 1) for p in pair.back_page_indices]
+        # Update slide labels (convert 0-based to human 1-based, or Blank)
+        front_human = [str(p + 1) if p >= 0 else "Blank" for p in pair.front_page_indices]
+        back_human = [str(p + 1) if p >= 0 else "Blank" for p in pair.back_page_indices]
+
+        front_desc = ", ".join(front_human) if front_human else "Blank"
+        back_desc = ", ".join(back_human) if back_human else "Blank"
 
         front_desc = ", ".join(front_human) if front_human else "Blank"
         back_desc = ", ".join(back_human) if back_human else "Blank"

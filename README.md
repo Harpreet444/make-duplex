@@ -4,7 +4,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![PyQt6](https://img.shields.io/badge/UI-PyQt6-green.svg)](https://pypi.org/project/PyQt6/)
 [![PyMuPDF](https://img.shields.io/badge/PDF-PyMuPDF%20%28fitz%29-orange.svg)](https://pymupdf.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-pytest%2035%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-pytest%2042%20passed-brightgreen.svg)]()
 
 > **make-duplex** is a cross-platform desktop application designed to solve the classic broken page-ordering problem when printing **N-up slides (2-up or 4-up)** on single-sided (non-duplex) printers with a single paper-stack flip.
 
@@ -88,10 +88,11 @@ Sheet 1 FRONT                   Sheet 1 BACK (after flip)
   - `4-up (Landscape)`: Four slides per page in a 2×2 landscape grid.
 - **Flexible Paper Sizes:** Supports `A4` (default) and `US Letter`.
 - **Drag-and-Drop & File Picker:** Drop any PDF directly onto the application window or use the file dialog.
-- **Custom Page Selection & Exclusion:**
+- **Custom Page Selection, Exclusion & Blank Page Insertion:**
   - Include specific page ranges: e.g. `1-20, 25, 30-42` (blank selects all pages).
   - **Skip / Exclude Pages:** Comma-separated list of pages to omit: e.g. `3, 7, 12-14`.
-  - Live indicator displaying total physical sheets and skipped slide counts.
+  - **Blank Pages (Insert):** Insert blank slots at comma-separated slide numbers (e.g. `2, 5, 8`) with configurable positioning (*After page* or *Before page*), ideal for note-taking space or aligning section starts on new physical sheets.
+  - Live indicator displaying total physical sheets, active slides, and blank/skipped counts.
 - **Live Side-by-Side Preview:** Interactive `Sheet X of Y` navigator showing exact Front and Back previews at high resolution.
 - **Tray & Orientation Customizations:**
   - **Reverse back-side order:** Essential for printers with face-up output trays where the output stack reverses order.
@@ -245,9 +246,10 @@ Or via python module:
 python -m pytest tests/ -v
 ```
 
-All 35 test cases cover:
+All 42 test cases cover:
 - Page range parsing, edge cases, and deduplication
 - Skip / exclude pages filtering (comma-separated and ranges)
+- Blank page insertion (*after* or *before* specified pages, with duplicates and skipped-page alignment)
 - Even, odd, and incomplete sheet chunking for 1-up, 2-up, and 4-up
 - 2-up portrait orientation (stacked vertically) vs. landscape (side-by-side)
 - Face-up reverse tray ordering
@@ -255,7 +257,7 @@ All 35 test cases cover:
 - Grayscale and color raster printing via `QPrintDialog`
 - Independent Front and Back side printing
 - PDF document composition and PNG raster preview rendering
-- PyQt6 window lifecycle, file loading, layout switches, and printer dialogs
+- PyQt6 window lifecycle, file loading, layout switches, blank page UI interactions, and printer dialogs
 
 ---
 

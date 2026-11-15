@@ -35,6 +35,7 @@ Responsibilities
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import NamedTuple
@@ -236,13 +237,130 @@ def parse_page_range(spec: str, total_pages: int) -> list[int]:
     return sorted(indices)
 
 
+def insert_blank_pages(
+    page_indices: list[int],
+    blank_spec: str,
+    total_pages: int,
+    position: str = "after",
+) -> list[int]:
+    """
+    Insert blank-page placeholders (-1) into *page_indices* at positions
+    specified by 1-based page numbers.
+
+    Parameters
+    ----------
+    page_indices:
+        Ordered list of 0-based page indices to which blanks are added.
+    blank_spec:
+        Comma-separated 1-based page numbers or ranges where blank pages
+        should be inserted, e.g. ``"2, 5"`` or ``"3-5"``.  An empty or
+        whitespace-only *blank_spec* returns a copy of *page_indices*.
+    total_pages:
+        Total number of pages in the source PDF (used for validation).
+    position:
+        ``"after"`` (default) to insert after the specified page,
+        or ``"before"`` to insert before the specified page.
+
+    Returns
+    -------
+    list[int]
+        New list of page indices where ``-1`` represents an inserted blank page.
+
+    Raises
+    ------
+    ValueError
+        If *blank_spec* contains an invalid token or a page number outside
+        the valid range ``[1, total_pages]``.
+    """
+    if not blank_spec or not blank_spec.strip():
+        return list(page_indices)
+
+    targets: list[int] = []
+    for raw_token in blank_spec.split(","):
+        token = raw_token.strip()
+        if not token:
+            continue
+
+        range_match = re.fullmatch(r"(\d+)\s*-\s*(\d+)", token)
+        single_match = re.fullmatch(r"(\d+)", token)
+
+        if range_match:
+            s1 = int(range_match.group(1))
+            e1 = int(range_match.group(2))
+            if s1 < 1 or e1 < 1:
+                raise ValueError(f"Page numbers must be >= 1; got '{token}'.")
+            if s1 > e1:
+                raise ValueError(f"Range start must not exceed range end; got '{token}'.")
+            if e1 > total_pages:
+                raise ValueError(
+                    f"Page {e1} is out of range (document has {total_pages} page(s))."
+                )
+            for p in range(s1, e1 + 1):
+                targets.append(p - 1)
+
+        elif single_match:
+            p1 = int(single_match.group(1))
+            if p1 < 1:
+                raise ValueError(f"Page numbers must be >= 1; got '{token}'.")
+            if p1 > total_pages:
+                raise ValueError(
+                    f"Page {p1} is out of range (document has {total_pages} page(s))."
+                )
+            targets.append(p1 - 1)
+
+        else:
+            raise ValueError(
+                f"Unrecognised blank-page token: '{token}'. "
+                "Expected formats: '5', '1-3'."
+            )
+
+    if not targets:
+        return list(page_indices)
+
+    target_counts = Counter(targets)
+    result: list[int] = []
+    handled: set[int] = set()
+
+    for p in page_indices:
+        if p >= 0 and position == "before":
+            for t in sorted(target_counts.keys()):
+                if t <= p and t not in handled:
+                    result.extend([-1] * target_counts[t])
+                    handled.add(t)
+
+        if p >= 0 and position == "after":
+            # If target t was skipped/omitted and is < p, insert before subsequent page p
+            for t in sorted(target_counts.keys()):
+                if t < p and t not in handled:
+                    result.extend([-1] * target_counts[t])
+                    handled.add(t)
+
+        result.append(p)
+
+        if p >= 0 and position == "after":
+            if p in target_counts and p not in handled:
+                result.extend([-1] * target_counts[p])
+                handled.add(p)
+
+    # Any remaining unhandled targets (e.g. after the last page in page_indices)
+    for t in sorted(target_counts.keys()):
+        if t not in handled:
+            result.extend([-1] * target_counts[t])
+            handled.add(t)
+
+    return result
+
+
 def filter_pages(
     include_spec: str,
     skip_spec: str,
     total_pages: int,
+    blank_spec: str = "",
+    blank_pos: str = "after",
 ) -> list[int]:
     """
-    Compute 0-based page indices to include, excluding any skipped pages.
+    Compute 0-based page indices to include, excluding any skipped pages
+    and inserting blank pages (-1) at specified page numbers.
 
     Parameters
     ----------
@@ -253,28 +371,40 @@ def filter_pages(
         blank = skip nothing).
     total_pages:
         Total number of pages in the source PDF.
+    blank_spec:
+        Comma-separated list or ranges of pages where blank pages should be
+        inserted (e.g. "2, 5"; blank = insert no blanks).
+    blank_pos:
+        "after" (default) or "before".
 
     Returns
     -------
     list[int]
-        Sorted list of 0-based page indices with skipped pages removed.
+        Ordered list of 0-based page indices with blanks represented by -1.
 
     Raises
     ------
     ValueError
-        If include_spec or skip_spec has invalid syntax or out-of-range pages.
+        If include_spec, skip_spec, or blank_spec has invalid syntax or out-of-range pages.
 
     Examples
     --------
     >>> filter_pages("1-5", "2, 4", 5)
     [0, 2, 4]
+    >>> filter_pages("1-5", "", 5, blank_spec="2", blank_pos="after")
+    [0, 1, -1, 2, 3, 4]
     """
     included = parse_page_range(include_spec, total_pages)
-    if not skip_spec or not skip_spec.strip():
-        return included
+    if skip_spec and skip_spec.strip():
+        skipped = set(parse_page_range(skip_spec, total_pages))
+        included = [p for p in included if p not in skipped]
 
-    skipped = set(parse_page_range(skip_spec, total_pages))
-    return [p for p in included if p not in skipped]
+    if blank_spec and blank_spec.strip():
+        included = insert_blank_pages(
+            included, blank_spec, total_pages, position=blank_pos
+        )
+
+    return included
 
 
 # ---------------------------------------------------------------------------
@@ -519,16 +649,13 @@ def build_nup_page(
             break
 
         src_page_no = page_indices[slot_idx]
-        if src_page_no < 0 or src_page_no >= len(src_pdf):
-            # Safety guard — skip invalid indices silently.
-            continue
-
-        out_page.show_pdf_page(
-            slot_rect,
-            src_pdf,
-            src_page_no,
-            keep_proportion=True,
-        )
+        if 0 <= src_page_no < len(src_pdf):
+            out_page.show_pdf_page(
+                slot_rect,
+                src_pdf,
+                src_page_no,
+                keep_proportion=True,
+            )
 
         if opts.draw_border:
             # Inset the border rectangle slightly so the line sits inside the slot.
